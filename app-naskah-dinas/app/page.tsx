@@ -308,9 +308,10 @@ export default function NaskahDinasPage() {
     tembusan: "",
   });
 
-  const [suratPerintahTugas, setSuratPerintahTugas] = useState<SuratPerintahTugasForm>({
+const [suratPerintahTugas, setSuratPerintahTugas] = useState<SuratPerintahTugasForm>({
     nomor: "",
     tempatTanggal: "",
+    dasarSurat: "",
     menimbang: "",
     mengingat: "",
     kepada: "",
@@ -442,10 +443,12 @@ export default function NaskahDinasPage() {
     const kepadaLines = linesOrDash(f.kepada);
     const untukLines = linesOrDash(f.untuk);
     return [
-      headShort,
+     headShort,
       "",
       "SURAT PERINTAH/SURAT TUGAS",
       `NOMOR ${f.nomor || "…"}`,
+      "",
+      `Dasar : ${f.dasarSurat || "…"}`,
       "",
       "Menimbang :",
       ...(menimbangLines.length ? menimbangLines.map((t, i) => `  ${letterAt(i)}. ${t}`) : ["  a. …"]),
@@ -477,8 +480,14 @@ export default function NaskahDinasPage() {
     setTimeout(() => setCopied(false), 2000);
   }
 
-  async function handleDownloadDocx() {
+async function handleDownloadDocx() {
     setDownloadError(null);
+    if (naskahType === "surat_perintah_tugas" && !suratPerintahTugas.dasarSurat.trim()) {
+      setDownloadError(
+        "Dasar/Lampiran wajib diisi — cantumkan surat undangan atau surat dinas lain yang mendasari Surat Perintah/Surat Tugas ini sebelum mengunduh."
+      );
+      return;
+    }
     setDownloading("docx");
     try {
       const { generateNaskahDocxBlob, suggestedFileName } = await import("./lib/generateDocx");
@@ -1039,7 +1048,22 @@ function SuratPerintahTugasFields({ value, onChange }: { value: SuratPerintahTug
   const set = (k: keyof SuratPerintahTugasForm) => (v: string) => onChange({ ...value, [k]: v });
   return (
     <>
-      <Field label="Nomor Naskah" value={value.nomor} onChange={set("nomor")} placeholder="800/1234/2026" hint="Tanpa derajat keamanan B/T" />
+   <Field label="Nomor Naskah" value={value.nomor} onChange={set("nomor")} placeholder="800/1234/2026" hint="Tanpa derajat keamanan B/T" />
+      <Field
+        label="Dasar / Lampiran (wajib)"
+        as="textarea"
+        rows={2}
+        value={value.dasarSurat}
+        onChange={set("dasarSurat")}
+        placeholder={"Surat Undangan Nomor .../..., tanggal ..., perihal ...\natau Surat Dinas Nomor ... tanggal ..."}
+        hint="Wajib diisi — sebutkan nomor & tanggal surat undangan atau surat dinas lain yang menjadi dasar penugasan ini."
+      />
+      {!value.dasarSurat.trim() && (
+        <p className="text-amber-400 text-xs -mt-2 flex items-start gap-1.5 bg-amber-400/10 border border-amber-400/30 rounded-lg px-3 py-2">
+          <span>⚠️</span>
+          <span>Surat Perintah/Surat Tugas wajib melampirkan dasar berupa surat undangan/surat dinas lain. Kotak ini tidak boleh kosong saat diunduh.</span>
+        </p>
+      )}
       <Field label="Tempat, Tanggal" value={value.tempatTanggal} onChange={set("tempatTanggal")} placeholder="Semarang, 10 Juli 2026" />
       <Field
         label="Menimbang (satu baris per butir, otomatis diberi huruf a, b, c, ...)"
@@ -1147,8 +1171,8 @@ function LetterPreview({
   // rata tengah, tebal, tanpa cetak miring — sesuai template resmi.
   const KopMemoNota = (
     <div className="text-center border-b-2 border-[#1e293b] pb-3 mb-6">
-      {satkerLines.map((l, i) => (
-        <p key={i} className="font-bold text-[15px] leading-tight uppercase">
+   {satkerLines.map((l, i) => (
+        <p key={i} className="font-bold text-[14px] leading-tight uppercase">
           {l}
         </p>
       ))}
@@ -1375,11 +1399,15 @@ function LetterPreview({
 
   return (
     <div className="text-[13px] leading-relaxed">
-      {KopSingkat}
+   {KopSingkat}
       <div className="text-center mb-6">
         <p className="font-bold tracking-wide">SURAT PERINTAH/SURAT TUGAS</p>
         <p>NOMOR {f.nomor || <Ph />}</p>
       </div>
+
+      <p className="mb-4 text-[13px]">
+        <span className="font-semibold">Dasar</span> : {f.dasarSurat || <Ph />}
+      </p>
 
       <table className="text-[13px] mb-4 w-full" style={{ borderCollapse: "collapse" }}>
         <tbody>
