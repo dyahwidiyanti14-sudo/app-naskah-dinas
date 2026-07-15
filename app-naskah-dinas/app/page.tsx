@@ -490,9 +490,18 @@ async function handleDownloadDocx() {
     }
     setDownloading("docx");
     try {
-      const { generateNaskahDocxBlob, suggestedFileName } = await import("./lib/generateDocx");
       const data = { naskahType, satker, suratDinas, undangan, memorandum, notaDinas, suratPerintahTugas };
-      const blob = await generateNaskahDocxBlob(data);
+      const { templateExists, generateFromTemplateBlob } = await import("./lib/generateFromTemplate");
+      const { generateNaskahDocxBlob, suggestedFileName } = await import("./lib/generateDocx");
+
+      // Kalau template Word asli untuk jenis naskah ini sudah diupload ke
+      // public/templates/, pakai itu (hasil 100% sama format aslinya).
+      // Kalau belum ada, tetap pakai generator kode lama supaya fitur tidak rusak.
+      const hasTemplate = await templateExists(naskahType);
+      const blob = hasTemplate
+        ? await generateFromTemplateBlob(data)
+        : await generateNaskahDocxBlob(data);
+
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
@@ -503,7 +512,8 @@ async function handleDownloadDocx() {
       URL.revokeObjectURL(url);
     } catch (err) {
       console.error(err);
-      setDownloadError("Gagal membuat file Word. Silakan coba lagi.");
+      const message = err instanceof Error ? err.message : "Gagal membuat file Word. Silakan coba lagi.";
+      setDownloadError(message);
     } finally {
       setDownloading(null);
     }
