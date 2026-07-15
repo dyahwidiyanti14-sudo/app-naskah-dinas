@@ -2,11 +2,126 @@ import {
   AlignmentType,
   BorderStyle,
   Document,
+  ImageRun,
   Packer,
   Paragraph,
+  Table,
+  TableCell,
+  TableRow,
   TextRun,
+  VerticalAlign,
+  WidthType,
 } from "docx";
 import type { AllForms } from "./types";
+
+// Logo BPS ditempel di kop surat. Rasio asli file public/logo-bps.png adalah
+// 751x581 (≈1.293:1) — sesuaikan HEIGHT/WIDTH berikut jika logo diganti.
+const LOGO_HEIGHT = 64;
+const LOGO_WIDTH = Math.round(LOGO_HEIGHT * (751 / 581));
+
+// Logo kedua (Sensus Ekonomi 2026), khusus dipasang di kop Surat Dinas saja,
+// di sisi kanan. Sesuaikan rasio ini begitu file public/logo-se2026.png tersedia.
+const SE_LOGO_HEIGHT = 56;
+const SE_LOGO_WIDTH = Math.round(SE_LOGO_HEIGHT * (751 / 581));
+
+async function fetchLogoBuffer(): Promise<ArrayBuffer | null> {
+  try {
+    const res = await fetch("/logo-bps.png");
+    if (!res.ok) return null;
+    return await res.arrayBuffer();
+  } catch {
+    return null;
+  }
+}
+
+async function fetchSELogoBuffer(): Promise<ArrayBuffer | null> {
+  try {
+    const res = await fetch("/logo-se2026.png");
+    if (!res.ok) return null;
+    return await res.arrayBuffer();
+  } catch {
+    return null;
+  }
+}
+
+// Susun kop sebagai tabel tanpa border: logo BPS di kiri, teks di tengah, dan
+// (opsional) logo kedua di kanan — dipakai khusus untuk Surat Dinas + logo SE2026.
+// Kalau seLogoData tidak diisi, kop hanya 2 kolom (logo BPS + teks) seperti biasa.
+function kopWithLogo(
+  logoData: ArrayBuffer | null,
+  textParagraphs: Paragraph[],
+  align: Align = AlignmentType.LEFT,
+  seLogoData?: ArrayBuffer | null
+): (Paragraph | Table)[] {
+  if (!logoData) {
+    // Fallback: kalau logo gagal dimuat, tetap tampilkan teks saja (jangan sampai gagal total).
+    return textParagraphs;
+  }
+
+  const noBorder = { style: BorderStyle.NONE, size: 0, color: "FFFFFF" };
+  const borders = {
+    top: noBorder,
+    bottom: noBorder,
+    left: noBorder,
+    right: noBorder,
+    insideHorizontal: noBorder,
+    insideVertical: noBorder,
+  };
+
+  const bpsLogoCell = new TableCell({
+    width: { size: 18, type: WidthType.PERCENTAGE },
+    verticalAlign: VerticalAlign.CENTER,
+    children: [
+      new Paragraph({
+        alignment: align === AlignmentType.CENTER ? AlignmentType.CENTER : AlignmentType.LEFT,
+        children: [
+          new ImageRun({
+            type: "png",
+            data: logoData,
+            transformation: { width: LOGO_WIDTH, height: LOGO_HEIGHT },
+          }),
+        ],
+      }),
+    ],
+  });
+
+  const textCell = new TableCell({
+    width: { size: seLogoData ? 64 : 82, type: WidthType.PERCENTAGE },
+    verticalAlign: VerticalAlign.CENTER,
+    children: textParagraphs,
+  });
+
+  const rowChildren = [bpsLogoCell, textCell];
+
+  if (seLogoData) {
+    rowChildren.push(
+      new TableCell({
+        width: { size: 18, type: WidthType.PERCENTAGE },
+        verticalAlign: VerticalAlign.CENTER,
+        children: [
+          new Paragraph({
+            alignment: AlignmentType.RIGHT,
+            children: [
+              new ImageRun({
+                type: "png",
+                data: seLogoData,
+                transformation: { width: SE_LOGO_WIDTH, height: SE_LOGO_HEIGHT },
+              }),
+            ],
+          }),
+        ],
+      })
+    );
+  }
+
+  return [
+    new Table({
+      width: { size: 100, type: WidthType.PERCENTAGE },
+      borders,
+      rows: [new TableRow({ children: rowChildren })],
+    }),
+  ];
+}
 
 /* ------------------------------------------------------------------ */
 /*  Small helpers (kept local & dependency-free on purpose)            */
@@ -171,28 +286,33 @@ function bodyParagraphs(text: string): Paragraph[] {
 /*  Letterhead (Kop)                                                   */
 /* ------------------------------------------------------------------ */
 
-function buildKop(nama: string, alamat: string, homepage: string, email: string): Paragraph[] {
+function buildKop(
+  logoData: ArrayBuffer | null,
+  nama: string,
+  alamat: string,
+  homepage: string,
+  email: string,
+  seLogoData?: ArrayBuffer | null
+): (Paragraph | Table)[] {
   const namaLines = nama.split("\n").filter(Boolean);
-  return [
+  const textParagraphs = [
     ...namaLines.map((l) => para(l.toUpperCase(), { bold: true, size: SIZE_HEAD, after: 20 })),
     para(alamat, { size: SIZE_SMALL, color: GRAY, after: 0 }),
     para(`Homepage: ${homepage}   E-mail: ${email}`, { size: SIZE_SMALL, color: GRAY, after: 0 }),
-    divider(),
   ];
+  return [...kopWithLogo(logoData, textParagraphs, AlignmentType.LEFT, seLogoData), divider()];
 }
 
-function buildKopSingkat(nama: string): Paragraph[] {
+function buildKopSingkat(logoData: ArrayBuffer | null, nama: string): (Paragraph | Table)[] {
   const namaLines = nama.split("\n").filter(Boolean);
-  return [
-    ...namaLines.map((l) =>
-      para(l.toUpperCase(), { bold: true, italics: true, align: AlignmentType.CENTER, after: 20 })
-    ),
-    divider(),
-  ];
+  const textParagraphs = namaLines.map((l) =>
+    para(l.toUpperCase(), { bold: true, italics: true, align: AlignmentType.CENTER, after: 20 })
+  );
+  return [...kopWithLogo(logoData, textParagraphs, AlignmentType.CENTER), divider()];
 }
 
-// Kop untuk Memorandum & Nota Dinas: hanya nama satker (tanpa alamat/telp/homepage/e-mail),
-// rata tengah, tebal, tanpa cetak miring — sesuai template resmi.
+// Kop untuk Memorandum & Nota Dinas: hanya nama satker (tanpa alamat/telp/homepage/e-mail/logo),
+// rata tengah, tebal, tanpa cetak miring — sesuai template resmi (tidak pakai logo apa pun).
 function buildKopMemoNota(nama: string): Paragraph[] {
   const namaLines = nama.split("\n").filter(Boolean);
   return [
@@ -396,12 +516,18 @@ const MARGIN_SURAT = { top: 1134, bottom: 1417, left: 1417, right: 1417 };
 export async function generateNaskahDocxBlob(data: AllForms): Promise<Blob> {
   const isMemoNota = data.naskahType === "memorandum" || data.naskahType === "nota_dinas";
   const isRingkas = data.naskahType === "surat_perintah_tugas";
+  const isSuratDinas = data.naskahType === "surat_dinas";
+
+  // Memorandum & Nota Dinas tidak pakai logo apa pun, jadi tidak perlu fetch logo untuk itu.
+  const logoData = isMemoNota ? null : await fetchLogoBuffer();
+  // Logo Sensus Ekonomi 2026 khusus dipasang di kop Surat Dinas saja.
+  const seLogoData = isSuratDinas ? await fetchSELogoBuffer() : null;
 
   const kop = isRingkas
-    ? buildKopSingkat(data.satker.nama)
+    ? buildKopSingkat(logoData, data.satker.nama)
     : isMemoNota
     ? buildKopMemoNota(data.satker.nama)
-    : buildKop(data.satker.nama, data.satker.alamat, data.satker.homepage, data.satker.email);
+    : buildKop(logoData, data.satker.nama, data.satker.alamat, data.satker.homepage, data.satker.email, seLogoData);
 
   const margin = isMemoNota ? MARGIN_MEMO_NOTA : MARGIN_SURAT;
 
