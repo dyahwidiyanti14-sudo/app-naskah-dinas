@@ -75,6 +75,7 @@ export interface NotaDinasForm {
 export interface SuratPerintahTugasForm {
   nomor: string;
   tempatTanggal: string;
+  dasarSurat: string;
   menimbang: string;
   mengingat: string;
   kepada: string;
