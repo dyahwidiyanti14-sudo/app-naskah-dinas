@@ -63,6 +63,7 @@ const RULES: Record<NaskahType, string[]> = {
     "Jika badan surat lebih dari 1 halaman, akhir halaman pertama diberi kata sambung di pojok kanan bawah berupa kata pertama halaman berikutnya.",
     "Jabatan pengirim diberi tanda koma di akhir, nama pengirim tanpa gelar.",
     SIGNATURE_LAMPIRAN_RULE,
+    "Tentukan dulu di kotak pilihan mode: cukup 1 halaman, atau dengan lampiran (halaman lampiran otomatis mengikuti format nomor & tanggal surat).",
   ],
   undangan: [
     "Menggantikan memorandum/nota dinas untuk undangan rapat internal (memo/nota dinas tidak berlaku lagi untuk keperluan ini).",
@@ -98,6 +99,7 @@ const RULES: Record<NaskahType, string[]> = {
     'Bagian "Memberi Perintah/Memberi Tugas" dicetak tebal, rata tengah, sebagai pemisah sebelum Kepada dan Untuk.',
     'Kepada dan Untuk diberi angka berurutan; jika lebih dari satu pihak/kegiatan ditutup dengan "dan seterusnya."',
     "Jabatan pengirim diberi tanda koma di akhir, nama pengirim tanpa gelar.",
+    "Tentukan dulu di kotak pilihan mode: tanpa lampiran (1 halaman) atau dengan lampiran (nama-nama dipindah ke Lampiran Surat Tugas tersendiri).",
   ],
 };
 
@@ -265,6 +267,8 @@ export default function NaskahDinasPage() {
     jabatanPengirim: "",
     namaPengirim: "",
     tembusan: "",
+    modeSurat: "1_halaman",
+    daftarLampiran: "",
   });
 
   const [undangan, setUndangan] = useState<UndanganForm>({
@@ -318,6 +322,8 @@ const [suratPerintahTugas, setSuratPerintahTugas] = useState<SuratPerintahTugasF
     untuk: "",
     jabatanPengirim: "",
     namaPengirim: "",
+    modeSurat: "tanpa_lampiran",
+    daftarLampiran: "",
   });
 
   const plainText = useMemo(() => {
@@ -352,6 +358,14 @@ const [suratPerintahTugas, setSuratPerintahTugas] = useState<SuratPerintahTugasF
         "",
         f.namaPengirim || "…",
         ...(linesOrDash(f.tembusan).length ? ["", "Tembusan:", ...linesOrDash(f.tembusan).map((t, i) => `${i + 1}. ${t}`)] : []),
+        ...(f.modeSurat === "dengan_lampiran"
+          ? [
+              "",
+              "=== HALAMAN BERIKUTNYA (LAMPIRAN) ===",
+              `LAMPIRAN SURAT — NOMOR: ${f.nomor || "…"} — TANGGAL: ${f.tempatTanggal || "…"}`,
+              ...(linesOrDash(f.daftarLampiran).length ? linesOrDash(f.daftarLampiran).map((t, i) => `${i + 1}. ${t}`) : ["1. …"]),
+            ]
+          : []),
       ].join("\n");
     }
 
@@ -459,8 +473,12 @@ const [suratPerintahTugas, setSuratPerintahTugas] = useState<SuratPerintahTugasF
       "Memberi Perintah/Memberi Tugas",
       "",
       "Kepada :",
-      ...(kepadaLines.length ? kepadaLines.map((t, i) => `  ${i + 1}. ${t}`) : ["  1. …"]),
-      ...(kepadaLines.length > 1 ? ["  dan seterusnya."] : []),
+      ...(f.modeSurat === "dengan_lampiran"
+        ? ["  Sebagaimana tercantum dalam Lampiran Surat Tugas ini."]
+        : kepadaLines.length
+        ? kepadaLines.map((t, i) => `  ${i + 1}. ${t}`)
+        : ["  1. …"]),
+      ...(f.modeSurat !== "dengan_lampiran" && kepadaLines.length > 1 ? ["  dan seterusnya."] : []),
       "",
       "Untuk :",
       ...(untukLines.length ? untukLines.map((t, i) => `  ${i + 1}. ${t}`) : ["  1. …"]),
@@ -471,6 +489,14 @@ const [suratPerintahTugas, setSuratPerintahTugas] = useState<SuratPerintahTugasF
       "",
       "",
       f.namaPengirim || "…",
+      ...(f.modeSurat === "dengan_lampiran"
+        ? [
+            "",
+            "=== HALAMAN BERIKUTNYA (LAMPIRAN SURAT TUGAS) ===",
+            `LAMPIRAN SURAT TUGAS — NOMOR: ${f.nomor || "…"} — TANGGAL: ${f.tempatTanggal || "…"}`,
+            ...(linesOrDash(f.daftarLampiran).length ? linesOrDash(f.daftarLampiran).map((t, i) => `${i + 1}. ${t}`) : ["1. …"]),
+          ]
+        : []),
     ].join("\n");
   }, [naskahType, satker, suratDinas, undangan, memorandum, notaDinas, suratPerintahTugas]);
 
@@ -485,6 +511,18 @@ async function handleDownloadDocx() {
     if (naskahType === "surat_perintah_tugas" && !suratPerintahTugas.dasarSurat.trim()) {
       setDownloadError(
         "Dasar/Lampiran wajib diisi — cantumkan surat undangan atau surat dinas lain yang mendasari Surat Perintah/Surat Tugas ini sebelum mengunduh."
+      );
+      return;
+    }
+    if (naskahType === "surat_perintah_tugas" && suratPerintahTugas.modeSurat === "dengan_lampiran" && !suratPerintahTugas.daftarLampiran.trim()) {
+      setDownloadError(
+        'Kamu memilih mode "dengan lampiran" — isi dulu Daftar Lampiran (nama-nama yang ditugaskan) sebelum mengunduh.'
+      );
+      return;
+    }
+    if (naskahType === "surat_dinas" && suratDinas.modeSurat === "dengan_lampiran" && !suratDinas.daftarLampiran.trim()) {
+      setDownloadError(
+        'Kamu memilih mode "dengan lampiran" — isi dulu Daftar Lampiran sebelum mengunduh.'
       );
       return;
     }
@@ -932,10 +970,92 @@ function Field({
   );
 }
 
+// Tombol pilihan mode surat (dipakai untuk Surat Dinas & Surat Perintah/Surat Tugas):
+// memastikan pengguna menentukan dulu apakah suratnya cukup 1 halaman atau
+// pakai lampiran (banyak halaman/banyak nama) sebelum mengisi kolom lain.
+function ModePicker<T extends string>({
+  question,
+  options,
+  value,
+  onChange,
+}: {
+  question: string;
+  options: { value: T; label: string; desc: string }[];
+  value: T;
+  onChange: (v: T) => void;
+}) {
+  return (
+    <div className="bg-ink border border-white/15 rounded-xl p-3 flex flex-col gap-2">
+      <span className="text-slate-300 text-xs font-medium">{question}</span>
+      <div className="grid grid-cols-1 gap-2">
+        {options.map((opt) => (
+          <button
+            type="button"
+            key={opt.value}
+            onClick={() => onChange(opt.value)}
+            className={`text-left px-3 py-2.5 rounded-lg border transition-colors ${
+              value === opt.value ? "border-accent bg-accent/10" : "border-white/15 hover:border-white/30"
+            }`}
+          >
+            <p className={`text-sm font-semibold ${value === opt.value ? "text-accent" : "text-white"}`}>{opt.label}</p>
+            <p className="text-slate-400 text-[11px] mt-0.5">{opt.desc}</p>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// Contoh preview format halaman lampiran yang benar — ditampilkan begitu pengguna
+// memilih mode "dengan lampiran", supaya tahu bentuk halaman lanjutan sebelum
+// menyambungkan isi lampiran, dan format-nya konsisten dengan yang akan dihasilkan.
+function LampiranPreviewExample({ judul, nomor, tempatTanggal }: { judul: string; nomor: string; tempatTanggal: string }) {
+  return (
+    <div className="bg-white/5 border border-dashed border-accent/40 rounded-xl p-3 text-[11px] text-slate-300 leading-relaxed">
+      <p className="text-accent font-semibold mb-1.5">Contoh format halaman lampiran (halaman berikutnya)</p>
+      <div className="bg-ink/60 rounded-lg p-3 text-center">
+        <p className="font-bold">LAMPIRAN {judul.toUpperCase()}</p>
+        <p>NOMOR: {nomor || "…"}</p>
+        <p className="mb-2">TANGGAL: {tempatTanggal || "…"}</p>
+        <div className="border-t border-white/15 my-2" />
+        <p className="text-left">1. …</p>
+        <p className="text-left">2. …</p>
+      </div>
+      <p className="mt-2 text-slate-500">
+        Halaman lampiran otomatis diletakkan setelah halaman utama (page break), mengikuti nomor & tanggal surat di
+        atas. Pastikan isi lampiran mengikuti format ini dulu sebelum menyambungkan file lampiran lain.
+      </p>
+    </div>
+  );
+}
+
 function SuratDinasFields({ value, onChange }: { value: SuratDinasForm; onChange: (v: SuratDinasForm) => void }) {
   const set = (k: keyof SuratDinasForm) => (v: string) => onChange({ ...value, [k]: v });
   return (
     <>
+      <ModePicker
+        question="Surat dinas ini seperti apa?"
+        value={value.modeSurat}
+        onChange={(v) => onChange({ ...value, modeSurat: v })}
+        options={[
+          { value: "1_halaman", label: "Cukup 1 halaman", desc: "Tanpa lampiran isi terpisah — surat selesai di 1 halaman." },
+          { value: "dengan_lampiran", label: "Pakai lampiran (lebih dari 1 halaman)", desc: "Ada lampiran yang dicetak di halaman terpisah setelah surat utama." },
+        ]}
+      />
+      {value.modeSurat === "dengan_lampiran" && (
+        <>
+          <Field
+            label="Isi Daftar Lampiran (satu baris per butir, otomatis diberi angka)"
+            as="textarea"
+            rows={4}
+            value={value.daftarLampiran}
+            onChange={set("daftarLampiran")}
+            placeholder={"Nama, NIP, Jabatan...\natau butir lampiran lainnya"}
+            hint="Wajib diisi kalau memilih mode dengan lampiran."
+          />
+          <LampiranPreviewExample judul="Surat" nomor={value.nomor} tempatTanggal={value.tempatTanggal} />
+        </>
+      )}
       <Field label="Nomor Naskah" value={value.nomor} onChange={set("nomor")} placeholder="B-XXX/33000/KA.220/2026" hint="Tanpa derajat keamanan B/T" />
       <Field label="Sifat" value={value.sifat} onChange={set("sifat")} />
       <Field label="Lampiran" value={value.lampiran} onChange={set("lampiran")} hint="Jika basah, lampiran ikut ditandatangani; jika elektronik/Srikandi, tidak perlu" />
@@ -1058,6 +1178,15 @@ function SuratPerintahTugasFields({ value, onChange }: { value: SuratPerintahTug
   const set = (k: keyof SuratPerintahTugasForm) => (v: string) => onChange({ ...value, [k]: v });
   return (
     <>
+      <ModePicker
+        question="Surat tugas ini seperti apa?"
+        value={value.modeSurat}
+        onChange={(v) => onChange({ ...value, modeSurat: v })}
+        options={[
+          { value: "tanpa_lampiran", label: "Tanpa lampiran (1 halaman)", desc: "Nama yang ditugaskan sedikit, ditulis langsung di kolom Kepada." },
+          { value: "dengan_lampiran", label: "Pakai lampiran (banyak nama)", desc: "Daftar nama panjang, dipindah ke halaman Lampiran Surat Tugas tersendiri." },
+        ]}
+      />
    <Field label="Nomor Naskah" value={value.nomor} onChange={set("nomor")} placeholder="800/1234/2026" hint="Tanpa derajat keamanan B/T" />
       <Field
         label="Dasar / Lampiran (wajib)"
@@ -1091,14 +1220,33 @@ function SuratPerintahTugasFields({ value, onChange }: { value: SuratPerintahTug
         onChange={set("mengingat")}
         placeholder={"Peraturan BPS Nomor ... tentang ...\nSurat Keputusan ... tentang ..."}
       />
-      <Field
-        label="Kepada (satu baris per nama/jabatan, otomatis diberi angka)"
-        as="textarea"
-        rows={3}
-        value={value.kepada}
-        onChange={set("kepada")}
-        placeholder={"Nama, NIP, Jabatan..."}
-      />
+      {value.modeSurat === "tanpa_lampiran" ? (
+        <Field
+          label="Kepada (satu baris per nama/jabatan, otomatis diberi angka)"
+          as="textarea"
+          rows={3}
+          value={value.kepada}
+          onChange={set("kepada")}
+          placeholder={"Nama, NIP, Jabatan..."}
+        />
+      ) : (
+        <>
+          <p className="text-slate-400 text-xs -mb-1">
+            Kolom &quot;Kepada&quot; otomatis diisi kalimat rujukan ke lampiran (&quot;Sebagaimana tercantum dalam Lampiran Surat
+            Tugas ini.&quot;) — isi nama-namanya di kolom Daftar Lampiran di bawah.
+          </p>
+          <Field
+            label="Daftar Lampiran — nama yang ditugaskan (satu baris per nama, otomatis diberi angka)"
+            as="textarea"
+            rows={5}
+            value={value.daftarLampiran}
+            onChange={set("daftarLampiran")}
+            placeholder={"Nama, NIP, Jabatan...\nNama, NIP, Jabatan..."}
+            hint="Wajib diisi kalau memilih mode dengan lampiran."
+          />
+          <LampiranPreviewExample judul="Surat Tugas" nomor={value.nomor} tempatTanggal={value.tempatTanggal} />
+        </>
+      )}
       <Field
         label="Untuk (satu baris per uraian tugas, otomatis diberi angka)"
         as="textarea"
@@ -1239,6 +1387,21 @@ function LetterPreview({
         {f.lampiran && f.lampiran !== "-" && (
           <div className="mt-8 pt-3 border-t border-dashed border-slate-300 text-[11px] text-slate-500">
             Catatan: {f.lampiran} — pastikan status tanda tangan lampiran mengikuti ketentuan (basah = ikut ditandatangani, elektronik/Srikandi = tidak perlu tanda tangan).
+          </div>
+        )}
+
+        {f.modeSurat === "dengan_lampiran" && (
+          <div className="mt-10 pt-6 border-t-4 border-double border-slate-300">
+            <p className="text-center text-[10px] text-slate-400 mb-3 uppercase tracking-wide">· · · Halaman Berikutnya · · ·</p>
+            <p className="text-center font-bold">LAMPIRAN SURAT</p>
+            <p className="text-center">NOMOR: {f.nomor || <Ph />}</p>
+            <p className="text-center mb-3">TANGGAL: {f.tempatTanggal || <Ph />}</p>
+            <div className="border-t border-[#1e293b] mb-3" />
+            {linesOrDash(f.daftarLampiran).length ? (
+              linesOrDash(f.daftarLampiran).map((t, i) => <p key={i}>{i + 1}. {t}</p>)
+            ) : (
+              <Ph text="Isi Daftar Lampiran belum diisi" />
+            )}
           </div>
         )}
       </div>
@@ -1473,7 +1636,9 @@ function LetterPreview({
             <td className="pr-3 align-top w-[110px] pt-2">Kepada</td>
             <td className="pr-2 align-top pt-2">:</td>
             <td className="pt-2">
-              {kepadaLines.length ? (
+              {f.modeSurat === "dengan_lampiran" ? (
+                <p className="text-justify">Sebagaimana tercantum dalam Lampiran Surat Tugas ini.</p>
+              ) : kepadaLines.length ? (
                 <>
                   <ol className="flex flex-col gap-1">
                     {kepadaLines.map((l, i) => (
@@ -1529,6 +1694,21 @@ function LetterPreview({
         <div className="h-16" />
         <p className="font-semibold">{f.namaPengirim || <Ph />}</p>
       </div>
+
+      {f.modeSurat === "dengan_lampiran" && (
+        <div className="mt-10 pt-6 border-t-4 border-double border-slate-300">
+          <p className="text-center text-[10px] text-slate-400 mb-3 uppercase tracking-wide">· · · Halaman Berikutnya · · ·</p>
+          <p className="text-center font-bold">LAMPIRAN SURAT TUGAS</p>
+          <p className="text-center">NOMOR: {f.nomor || <Ph />}</p>
+          <p className="text-center mb-3">TANGGAL: {f.tempatTanggal || <Ph />}</p>
+          <div className="border-t border-[#1e293b] mb-3" />
+          {linesOrDash(f.daftarLampiran).length ? (
+            linesOrDash(f.daftarLampiran).map((t, i) => <p key={i}>{i + 1}. {t}</p>)
+          ) : (
+            <Ph text="Isi Daftar Lampiran belum diisi" />
+          )}
+        </div>
+      )}
     </div>
   );
 }
