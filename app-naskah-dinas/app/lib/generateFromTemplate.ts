@@ -61,6 +61,11 @@ function buildTagData(data: AllForms): Record<string, unknown> {
         jabatanPengirim: f.jabatanPengirim,
         namaPengirim: f.namaPengirim,
         tembusanList: linesOrDash(f.tembusan),
+        // adaLampiran dipakai sebagai kondisi {#adaLampiran}...{/adaLampiran} di template
+        // untuk membungkus halaman lampiran (page break + daftarLampiranList) — hanya
+        // muncul kalau pengguna memilih mode "dengan lampiran" di formulir.
+        adaLampiran: f.modeSurat === "dengan_lampiran",
+        daftarLampiranList: linesOrDash(f.daftarLampiran),
       };
     }
     case "undangan": {
@@ -115,6 +120,7 @@ function buildTagData(data: AllForms): Record<string, unknown> {
     }
     case "surat_perintah_tugas": {
       const f = data.suratPerintahTugas;
+      const adaLampiran = f.modeSurat === "dengan_lampiran";
       return {
         ...common,
         nomor: f.nomor,
@@ -123,8 +129,13 @@ function buildTagData(data: AllForms): Record<string, unknown> {
         namaPengirim: f.namaPengirim,
         menimbangList: linesOrDash(f.menimbang),
         mengingatList: linesOrDash(f.mengingat),
-        kepadaList: linesOrDash(f.kepada),
+        // Kalau dengan_lampiran: kepadaList sengaja dikosongkan — template harus pakai
+        // {#adaLampiran} untuk menampilkan teks rujukan "sebagaimana tercantum dalam
+        // Lampiran Surat Tugas ini" alih-alih daftar nama di badan surat.
+        kepadaList: adaLampiran ? [] : linesOrDash(f.kepada),
         untukList: linesOrDash(f.untuk),
+        adaLampiran,
+        daftarLampiranList: linesOrDash(f.daftarLampiran),
       };
     }
     default:
