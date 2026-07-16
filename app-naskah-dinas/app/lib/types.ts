@@ -16,6 +16,10 @@ export interface SatkerInfo {
   email: string;
 }
 
+// "1_halaman"      : surat cukup 1 halaman, tanpa lampiran isi terpisah.
+// "dengan_lampiran": surat lebih dari 1 halaman karena ada lampiran (daftarLampiran wajib diisi).
+export type ModeSuratDinas = "1_halaman" | "dengan_lampiran";
+
 export interface SuratDinasForm {
   nomor: string;
   sifat: string;
@@ -29,6 +33,10 @@ export interface SuratDinasForm {
   jabatanPengirim: string;
   namaPengirim: string;
   tembusan: string;
+  modeSurat: ModeSuratDinas;
+  // Isi lampiran (satu baris per butir), dipakai kalau modeSurat === "dengan_lampiran".
+  // Dicetak sebagai halaman terpisah setelah badan surat, mengikuti nomor & tanggal surat.
+  daftarLampiran: string;
 }
 
 export interface UndanganForm {
@@ -72,6 +80,11 @@ export interface NotaDinasForm {
   tembusan: string;
 }
 
+// "tanpa_lampiran" : surat tugas 1 halaman, nama-nama ditulis langsung di "Kepada" (field kepada).
+// "dengan_lampiran": daftar nama banyak, dipindah ke lampiran surat tugas terpisah (field daftarLampiran);
+//                    field "kepada" tidak dipakai, badan surat cukup merujuk ke lampiran.
+export type ModeSuratTugas = "tanpa_lampiran" | "dengan_lampiran";
+
 export interface SuratPerintahTugasForm {
   nomor: string;
   tempatTanggal: string;
@@ -82,6 +95,10 @@ export interface SuratPerintahTugasForm {
   untuk: string;
   jabatanPengirim: string;
   namaPengirim: string;
+  modeSurat: ModeSuratTugas;
+  // Daftar nama/NIP/jabatan (satu baris per orang), dipakai kalau modeSurat === "dengan_lampiran".
+  // Dicetak sebagai halaman Lampiran Surat Tugas terpisah.
+  daftarLampiran: string;
 }
 
 export interface AllForms {
