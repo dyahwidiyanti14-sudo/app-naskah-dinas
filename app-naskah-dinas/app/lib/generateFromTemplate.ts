@@ -20,7 +20,13 @@ function resolveTemplatePath(data: AllForms): string {
         ? "/templates/surat-dinas-lampiran.docx"
         : "/templates/surat-dinas.docx";
     case "undangan":
-      return "/templates/undangan.docx";
+      // Undangan tidak punya template sendiri — sesuai keputusan, reuse file
+      // surat-dinas.docx / surat-dinas-lampiran.docx. Pilih versi lampiran kalau
+      // ada daftar pejabat/pegawai yang diundang, sama seperti aturan modeSurat
+      // pada Surat Dinas biasa.
+      return linesOrDash(data.undangan.daftarDiundang).length > 0
+        ? "/templates/surat-dinas-lampiran.docx"
+        : "/templates/surat-dinas.docx";
     case "memorandum":
       return "/templates/memorandum.docx";
     case "nota_dinas":
@@ -90,6 +96,15 @@ function buildTagData(data: AllForms): Record<string, unknown> {
     }
     case "undangan": {
       const f = data.undangan;
+      // Undangan mengisi file surat-dinas.docx / surat-dinas-lampiran.docx yang sama
+      // dengan Surat Dinas biasa, jadi tag-nya HARUS mengikuti tag di template itu
+      // (alineaIsi, daftarLampiranList) — bukan tag khusus undangan.docx yang lama.
+      const alineaIsi = [
+        `hari/tanggal : ${f.hariTanggal || "-"}`,
+        `waktu        : pukul ${f.waktu || "-"}`,
+        `tempat       : ${f.tempatAcara || "-"}`,
+        `acara        : ${f.acara || "-"}`,
+      ].join("\n");
       return {
         ...common,
         nomor: f.nomor,
@@ -99,15 +114,13 @@ function buildTagData(data: AllForms): Record<string, unknown> {
         tempatTanggal: f.tempatTanggal,
         yth: f.yth,
         alineaPembuka: f.alineaPembuka,
-        hariTanggal: f.hariTanggal,
-        waktu: f.waktu,
-        tempatAcara: f.tempatAcara,
-        acara: f.acara,
+        alineaIsi,
         alineaPenutup: f.alineaPenutup,
         jabatanPengirim: f.jabatanPengirim,
         namaPengirim: f.namaPengirim,
         tembusanList: linesOrDash(f.tembusan),
-        daftarDiundangList: linesOrDash(f.daftarDiundang),
+        // Dipakai kalau template yang dipilih adalah surat-dinas-lampiran.docx.
+        daftarLampiranList: linesOrDash(f.daftarDiundang),
       };
     }
     case "memorandum": {
