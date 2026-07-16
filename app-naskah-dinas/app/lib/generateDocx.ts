@@ -324,12 +324,35 @@ function buildKopMemoNota(nama: string): Paragraph[] {
 }
 
 /* ------------------------------------------------------------------ */
+/*  Halaman lampiran (Surat Dinas & Surat Perintah/Surat Tugas)        */
+/*  — dicetak di halaman terpisah (page break) setelah badan surat,    */
+/*  mengikuti nomor & tanggal surat yang bersangkutan.                 */
+/* ------------------------------------------------------------------ */
+
+function pageBreak(): Paragraph {
+  return new Paragraph({ children: [run(" ")], pageBreakBefore: true });
+}
+
+function buildLampiranPage(judul: string, nomor: string, tempatTanggal: string, isi: string[]): Paragraph[] {
+  return [
+    pageBreak(),
+    para(`LAMPIRAN ${judul.toUpperCase()}`, { bold: true, align: AlignmentType.CENTER, after: 20 }),
+    para(`NOMOR: ${nomor || "-"}`, { align: AlignmentType.CENTER, after: 20 }),
+    para(`TANGGAL: ${tempatTanggal || "-"}`, { align: AlignmentType.CENTER, after: 260 }),
+    divider(),
+    ...(isi.length ? isi.map((t, i) => para(`${i + 1}. ${t}`, { after: 60 })) : [para("1. …", { after: 60 })]),
+  ];
+}
+
+/* ------------------------------------------------------------------ */
 /*  Per-type body builders                                             */
 /* ------------------------------------------------------------------ */
 
 function buildSuratDinasBody(f: AllForms["suratDinas"]): Paragraph[] {
   const yth = linesOrDash(f.yth);
   const tembusan = linesOrDash(f.tembusan);
+  const withLampiran = f.modeSurat === "dengan_lampiran";
+  const lampiranIsi = linesOrDash(f.daftarLampiran);
   return [
     labelValueRow("Nomor", f.nomor),
     labelValueRow("Sifat", f.sifat),
@@ -349,6 +372,7 @@ function buildSuratDinasBody(f: AllForms["suratDinas"]): Paragraph[] {
     ...(tembusan.length
       ? [para("Tembusan:", { after: 40 }), ...tembusan.map((t, i) => para(`${i + 1}. ${t}`, { after: 20 }))]
       : []),
+    ...(withLampiran ? buildLampiranPage("Surat", f.nomor, f.tempatTanggal, lampiranIsi) : []),
   ];
 }
 
@@ -438,6 +462,8 @@ function buildSuratPerintahTugasBody(f: AllForms["suratPerintahTugas"]): Paragra
   const mengingat = linesOrDash(f.mengingat);
   const kepada = linesOrDash(f.kepada);
   const untuk = linesOrDash(f.untuk);
+  const withLampiran = f.modeSurat === "dengan_lampiran";
+  const lampiranIsi = linesOrDash(f.daftarLampiran);
 
   return [
     para("SURAT PERINTAH/SURAT TUGAS", { bold: true, align: AlignmentType.CENTER, after: 20 }),
@@ -464,8 +490,12 @@ function buildSuratPerintahTugasBody(f: AllForms["suratPerintahTugas"]): Paragra
     para("", { after: 120 }),
     para("Memberi Perintah/Memberi Tugas", { bold: true, align: AlignmentType.CENTER, after: 220 }),
     para("Kepada :", { after: 60 }),
-    ...(kepada.length ? kepada.map((l, i) => para(`${i + 1}. ${l};`, { after: 60 })) : [para("1. …", { after: 60 })]),
-    ...(kepada.length > 1 ? [para("dan seterusnya.", { italics: true, after: 60 })] : []),
+    ...(withLampiran
+      ? [para("Sebagaimana tercantum dalam Lampiran Surat Tugas ini.", { align: AlignmentType.JUSTIFIED, after: 60 })]
+      : kepada.length
+      ? kepada.map((l, i) => para(`${i + 1}. ${l};`, { after: 60 }))
+      : [para("1. …", { after: 60 })]),
+    ...(!withLampiran && kepada.length > 1 ? [para("dan seterusnya.", { italics: true, after: 60 })] : []),
     para("", { after: 100 }),
     para("Untuk :", { after: 60 }),
     ...(untuk.length ? untuk.map((l, i) => para(`${i + 1}. ${l};`, { after: 60 })) : [para("1. …", { after: 60 })]),
@@ -475,6 +505,7 @@ function buildSuratPerintahTugasBody(f: AllForms["suratPerintahTugas"]): Paragra
     ...jabatanParagraphs(f.jabatanPengirim, AlignmentType.CENTER),
     ...emptyLine(3),
     para(f.namaPengirim, { align: AlignmentType.CENTER, bold: true }),
+    ...(withLampiran ? buildLampiranPage("Surat Tugas", f.nomor, f.tempatTanggal, lampiranIsi) : []),
   ];
 }
 
