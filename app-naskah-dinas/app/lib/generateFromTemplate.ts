@@ -1,19 +1,38 @@
 import PizZip from "pizzip";
 import Docxtemplater from "docxtemplater";
-import type { AllForms, NaskahType } from "./types";
+import type { AllForms } from "./types";
 
 /* ------------------------------------------------------------------ */
-/*  Pemetaan nama file template per jenis naskah dinas.                 */
+/*  Pemetaan nama file template.                                        */
 /*  HARUS SAMA PERSIS dengan nama file yang diupload ke                 */
-/*  public/templates/ — lihat public/templates/README.md               */
+/*  public/templates/ — lihat public/templates/README.md.               */
+/*                                                                       */
+/*  Surat Dinas & Surat Perintah/Surat Tugas punya 2 file template      */
+/*  terpisah (bukan 1 file dengan tag kondisi): satu untuk mode          */
+/*  "1 halaman / tanpa lampiran", satu lagi untuk mode "dengan           */
+/*  lampiran". Sistem otomatis pilih file mana yang dipakai sesuai       */
+/*  pilihan mode yang ditentukan pengguna di formulir.                   */
 /* ------------------------------------------------------------------ */
-const TEMPLATE_FILE: Record<NaskahType, string> = {
-  surat_dinas: "/templates/surat-dinas.docx",
-  undangan: "/templates/undangan.docx",
-  memorandum: "/templates/memorandum.docx",
-  nota_dinas: "/templates/nota-dinas.docx",
-  surat_perintah_tugas: "/templates/surat-perintah-tugas.docx",
-};
+function resolveTemplatePath(data: AllForms): string {
+  switch (data.naskahType) {
+    case "surat_dinas":
+      return data.suratDinas.modeSurat === "dengan_lampiran"
+        ? "/templates/surat-dinas-lampiran.docx"
+        : "/templates/surat-dinas.docx";
+    case "undangan":
+      return "/templates/undangan.docx";
+    case "memorandum":
+      return "/templates/memorandum.docx";
+    case "nota_dinas":
+      return "/templates/nota-dinas.docx";
+    case "surat_perintah_tugas":
+      return data.suratPerintahTugas.modeSurat === "dengan_lampiran"
+        ? "/templates/surat-perintah-tugas-lampiran.docx"
+        : "/templates/surat-perintah-tugas.docx";
+    default:
+      return "";
+  }
+}
 
 function linesOrDash(text: string): string[] {
   return text
@@ -22,12 +41,15 @@ function linesOrDash(text: string): string[] {
     .filter(Boolean);
 }
 
-// Cek apakah template untuk jenis naskah ini sudah diupload ke public/templates/.
-// Dipakai supaya sistem bisa fallback otomatis ke generator kode lama (generateDocx.ts)
-// selama template belum tersedia, tanpa bikin fitur yang sudah ada rusak.
-export async function templateExists(naskahType: NaskahType): Promise<boolean> {
+// Cek apakah template untuk kombinasi jenis naskah + mode (1 halaman / dengan
+// lampiran) ini sudah diupload ke public/templates/. Dipakai supaya sistem bisa
+// fallback otomatis ke generator kode lama (generateDocx.ts) selama file
+// template yang bersangkutan belum tersedia, tanpa bikin fitur yang sudah ada rusak.
+export async function templateExists(data: AllForms): Promise<boolean> {
+  const path = resolveTemplatePath(data);
+  if (!path) return false;
   try {
-    const res = await fetch(TEMPLATE_FILE[naskahType], { method: "HEAD" });
+    const res = await fetch(path, { method: "HEAD" });
     return res.ok;
   } catch {
     return false;
@@ -61,10 +83,8 @@ function buildTagData(data: AllForms): Record<string, unknown> {
         jabatanPengirim: f.jabatanPengirim,
         namaPengirim: f.namaPengirim,
         tembusanList: linesOrDash(f.tembusan),
-        // adaLampiran dipakai sebagai kondisi {#adaLampiran}...{/adaLampiran} di template
-        // untuk membungkus halaman lampiran (page break + daftarLampiranList) — hanya
-        // muncul kalau pengguna memilih mode "dengan lampiran" di formulir.
-        adaLampiran: f.modeSurat === "dengan_lampiran",
+        // Hanya dipakai kalau file template yang dipilih adalah versi
+        // surat-dinas-lampiran.docx (lihat public/templates/README.md).
         daftarLampiranList: linesOrDash(f.daftarLampiran),
       };
     }
@@ -120,7 +140,6 @@ function buildTagData(data: AllForms): Record<string, unknown> {
     }
     case "surat_perintah_tugas": {
       const f = data.suratPerintahTugas;
-      const adaLampiran = f.modeSurat === "dengan_lampiran";
       return {
         ...common,
         nomor: f.nomor,
@@ -129,12 +148,12 @@ function buildTagData(data: AllForms): Record<string, unknown> {
         namaPengirim: f.namaPengirim,
         menimbangList: linesOrDash(f.menimbang),
         mengingatList: linesOrDash(f.mengingat),
-        // Kalau dengan_lampiran: kepadaList sengaja dikosongkan — template harus pakai
-        // {#adaLampiran} untuk menampilkan teks rujukan "sebagaimana tercantum dalam
-        // Lampiran Surat Tugas ini" alih-alih daftar nama di badan surat.
-        kepadaList: adaLampiran ? [] : linesOrDash(f.kepada),
+        // Dipakai kalau file template yang dipilih adalah versi tanpa lampiran
+        // (surat-perintah-tugas.docx).
+        kepadaList: linesOrDash(f.kepada),
         untukList: linesOrDash(f.untuk),
-        adaLampiran,
+        // Dipakai kalau file template yang dipilih adalah versi dengan lampiran
+        // (surat-perintah-tugas-lampiran.docx) — lihat public/templates/README.md.
         daftarLampiranList: linesOrDash(f.daftarLampiran),
       };
     }
@@ -146,7 +165,7 @@ function buildTagData(data: AllForms): Record<string, unknown> {
 // Ambil file template asli dari public/templates/, isi tag-tagnya dengan data
 // form, dan hasilkan file .docx baru yang formatnya 100% mengikuti template asli.
 export async function generateFromTemplateBlob(data: AllForms): Promise<Blob> {
-  const templateUrl = TEMPLATE_FILE[data.naskahType];
+  const templateUrl = resolveTemplatePath(data);
   const res = await fetch(templateUrl);
   if (!res.ok) {
     throw new Error(
