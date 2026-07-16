@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type {
   NaskahType,
   SatkerInfo,
@@ -9,6 +9,7 @@ import type {
   MemorandumForm,
   NotaDinasForm,
   SuratPerintahTugasForm,
+  AllForms,
 } from "./lib/types";
 
 /* ------------------------------------------------------------------ */
@@ -500,6 +501,14 @@ const [suratPerintahTugas, setSuratPerintahTugas] = useState<SuratPerintahTugasF
     ].join("\n");
   }, [naskahType, satker, suratDinas, undangan, memorandum, notaDinas, suratPerintahTugas]);
 
+  // Satu sumber data yang dipakai bareng oleh preview (RealDocxPreview) dan
+  // proses download — supaya keduanya selalu render dari isian form yang
+  // persis sama, tidak ada celah beda antara apa yang dilihat vs yang diunduh.
+  const naskahData: AllForms = useMemo(
+    () => ({ naskahType, satker, suratDinas, undangan, memorandum, notaDinas, suratPerintahTugas }),
+    [naskahType, satker, suratDinas, undangan, memorandum, notaDinas, suratPerintahTugas]
+  );
+
   async function handleCopy() {
     const ok = await copyText(plainText);
     setCopied(ok);
@@ -528,22 +537,21 @@ async function handleDownloadDocx() {
     }
     setDownloading("docx");
     try {
-      const data = { naskahType, satker, suratDinas, undangan, memorandum, notaDinas, suratPerintahTugas };
       const { templateExists, generateFromTemplateBlob } = await import("./lib/generateFromTemplate");
       const { generateNaskahDocxBlob, suggestedFileName } = await import("./lib/generateDocx");
 
       // Kalau template Word asli untuk jenis naskah ini sudah diupload ke
       // public/templates/, pakai itu (hasil 100% sama format aslinya).
       // Kalau belum ada, tetap pakai generator kode lama supaya fitur tidak rusak.
-      const hasTemplate = await templateExists(data);
+      const hasTemplate = await templateExists(naskahData);
       const blob = hasTemplate
-        ? await generateFromTemplateBlob(data)
-        : await generateNaskahDocxBlob(data);
+        ? await generateFromTemplateBlob(naskahData)
+        : await generateNaskahDocxBlob(naskahData);
 
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = suggestedFileName(data);
+      a.download = suggestedFileName(naskahData);
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -707,16 +715,8 @@ async function handleDownloadDocx() {
 
           {/* PREVIEW (live, mengikuti isian di sebelah kiri) */}
           <div className="flex flex-col items-center gap-4">
-            <div className="print-area bg-white text-[#1e293b] w-full max-w-[820px] min-h-[1000px] shadow-2xl rounded-sm px-10 py-10 md:px-14 md:py-12" style={{ fontFamily: "Arial, sans-serif" }}>
-              <LetterPreview
-                naskahType={naskahType}
-                satker={satker}
-                suratDinas={suratDinas}
-                undangan={undangan}
-                memorandum={memorandum}
-                notaDinas={notaDinas}
-                suratPerintahTugas={suratPerintahTugas}
-              />
+            <div className="print-area w-full max-w-[820px] min-h-[1000px]">
+              <RealDocxPreview data={naskahData} />
             </div>
           </div>
         </main>
@@ -784,16 +784,8 @@ async function handleDownloadDocx() {
           </div>
 
           {/* Preview penuh */}
-          <div className="print-area bg-white text-[#1e293b] w-full max-w-[820px] min-h-[1000px] shadow-2xl rounded-sm px-10 py-10 md:px-14 md:py-12" style={{ fontFamily: "Arial, sans-serif" }}>
-            <LetterPreview
-              naskahType={naskahType}
-              satker={satker}
-              suratDinas={suratDinas}
-              undangan={undangan}
-              memorandum={memorandum}
-              notaDinas={notaDinas}
-              suratPerintahTugas={suratPerintahTugas}
-            />
+          <div className="print-area w-full max-w-[820px] min-h-[1000px]">
+            <RealDocxPreview data={naskahData} />
           </div>
         </main>
       )}
@@ -1266,6 +1258,77 @@ function SuratPerintahTugasFields({ value, onChange }: { value: SuratPerintahTug
       />
       <Field label="Nama Pengirim" value={value.namaPengirim} onChange={set("namaPengirim")} hint="Tanpa gelar" />
     </>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Real docx preview — render langsung dari file .docx yang sama       */
+/*  persis dengan yang akan diunduh (template asli via generateFrom-    */
+/*  Template, atau fallback generateDocx kalau template belum ada),     */
+/*  supaya preview di layar bukan lagi tiruan HTML tapi hasil docx asli */
+/*  yang dibaca ulang oleh docx-preview.                                */
+/* ------------------------------------------------------------------ */
+
+function RealDocxPreview({ data }: { data: AllForms }) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    const el = containerRef.current;
+    if (!el) return;
+
+    setStatus("loading");
+    setErrorMessage(null);
+    el.innerHTML = "";
+
+    (async () => {
+      try {
+        const { templateExists, generateFromTemplateBlob } = await import("./lib/generateFromTemplate");
+        const { generateNaskahDocxBlob } = await import("./lib/generateDocx");
+        const { renderAsync } = await import("docx-preview");
+
+        const hasTemplate = await templateExists(data);
+        const blob = hasTemplate
+          ? await generateFromTemplateBlob(data)
+          : await generateNaskahDocxBlob(data);
+
+        if (cancelled || !containerRef.current) return;
+
+        await renderAsync(blob, containerRef.current, undefined, {
+          className: "docx-preview",
+          inWrapper: true, // pertahankan pembungkus halaman asli Word (shadow per halaman)
+          ignoreWidth: false,
+          ignoreHeight: false,
+          breakPages: true,
+          experimental: true,
+        });
+
+        if (!cancelled) setStatus("ready");
+      } catch (err) {
+        if (cancelled) return;
+        console.error(err);
+        setErrorMessage(err instanceof Error ? err.message : "Gagal menampilkan preview naskah.");
+        setStatus("error");
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [data]);
+
+  return (
+    <div className="w-full flex flex-col items-center gap-3">
+      {status === "loading" && (
+        <p className="text-slate-400 text-xs py-10">Menyiapkan preview naskah…</p>
+      )}
+      {status === "error" && (
+        <p className="text-red-400 text-xs py-10 text-center max-w-md">{errorMessage}</p>
+      )}
+      <div ref={containerRef} className="w-full [&_.docx-wrapper]:bg-transparent" />
+    </div>
   );
 }
 
