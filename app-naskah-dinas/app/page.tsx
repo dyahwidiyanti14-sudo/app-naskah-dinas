@@ -535,7 +535,7 @@ async function handleDownloadDocx() {
       // Kalau template Word asli untuk jenis naskah ini sudah diupload ke
       // public/templates/, pakai itu (hasil 100% sama format aslinya).
       // Kalau belum ada, tetap pakai generator kode lama supaya fitur tidak rusak.
-      const hasTemplate = await templateExists(naskahType);
+      const hasTemplate = await templateExists(data);
       const blob = hasTemplate
         ? await generateFromTemplateBlob(data)
         : await generateNaskahDocxBlob(data);
