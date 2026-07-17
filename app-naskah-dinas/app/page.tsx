@@ -1274,6 +1274,17 @@ function RealDocxPreview({ data }: { data: AllForms }) {
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
+  // Debounce: generate ulang file .docx itu berat (fetch template + proses XML +
+  // render docx-preview), jadi jangan dipicu di SETIAP ketukan tombol — tunggu
+  // sampai pengisian jeda sebentar (500ms) baru render ulang. Tanpa ini, preview
+  // selalu ketinggalan/terkesan "tidak update" saat mengetik cepat, karena proses
+  // render untuk tiap huruf saling menumpuk.
+  const [debouncedData, setDebouncedData] = useState(data);
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedData(data), 500);
+    return () => clearTimeout(timer);
+  }, [data]);
+
   useEffect(() => {
     let cancelled = false;
     const el = containerRef.current;
@@ -1281,7 +1292,6 @@ function RealDocxPreview({ data }: { data: AllForms }) {
 
     setStatus("loading");
     setErrorMessage(null);
-    el.innerHTML = "";
 
     (async () => {
       try {
@@ -1289,12 +1299,16 @@ function RealDocxPreview({ data }: { data: AllForms }) {
         const { generateNaskahDocxBlob } = await import("./lib/generateDocx");
         const { renderAsync } = await import("docx-preview");
 
-        const hasTemplate = await templateExists(data);
+        const hasTemplate = await templateExists(debouncedData);
         const blob = hasTemplate
-          ? await generateFromTemplateBlob(data)
-          : await generateNaskahDocxBlob(data);
+          ? await generateFromTemplateBlob(debouncedData)
+          : await generateNaskahDocxBlob(debouncedData);
 
         if (cancelled || !containerRef.current) return;
+
+        // Baru kosongkan preview lama di sini, tepat sebelum yang baru siap
+        // digambar — supaya layar tidak sempat kosong/kedip selama proses di atas.
+        containerRef.current.innerHTML = "";
 
         await renderAsync(blob, containerRef.current, undefined, {
           className: "docx-preview",
@@ -1317,7 +1331,7 @@ function RealDocxPreview({ data }: { data: AllForms }) {
     return () => {
       cancelled = true;
     };
-  }, [data]);
+  }, [debouncedData]);
 
   return (
     <div className="w-full flex flex-col items-center gap-3">
