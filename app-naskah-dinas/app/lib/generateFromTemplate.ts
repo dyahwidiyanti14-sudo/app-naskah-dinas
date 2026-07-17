@@ -70,6 +70,14 @@ function buildTagData(data: AllForms): Record<string, unknown> {
     alamatSatker: data.satker.alamat,
     homepageSatker: data.satker.homepage,
     emailSatker: data.satker.email,
+    // Penanda posisi tanda tangan untuk SRIKANDI. Template menulisnya sebagai
+    // literal teks "$" + "{ttd_pengirim}" di bagian tanda tangan, supaya saat
+    // diunggah ke SRIKANDI dan dibuka via Text Editor, admin tinggal cari teks
+    // "$ttd_pengirim" untuk menandai posisi barcode TTE (lihat panduan SRIKANDI
+    // langkah "Text Editor"). Karena "{ttd_pengirim}" kebetulan pakai delimiter
+    // yang sama dengan tag docxtemplater, kita HARUS isi nilainya di sini —
+    // kalau tidak, docxtemplater akan menggantinya jadi teks "undefined".
+    ttd_pengirim: "ttd_pengirim",
   };
 
   switch (data.naskahType) {
