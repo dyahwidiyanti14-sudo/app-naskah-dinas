@@ -230,6 +230,71 @@ async function copyText(text: string) {
 }
 
 /* ------------------------------------------------------------------ */
+/*  Editable — field yang bisa diklik & diketik LANGSUNG di badan       */
+/*  surat (gaya "Text Editor" di SRIKANDI), tanpa harus balik ke form   */
+/*  di kolom kiri. Sengaja UNCONTROLLED saat fokus (baru commit ke      */
+/*  state React saat blur/Enter) supaya kursor tidak "loncat" akibat    */
+/*  re-render React di tengah mengetik — masalah klasik contentEditable */
+/*  yang dikontrol penuh oleh state di tiap huruf.                      */
+/* ------------------------------------------------------------------ */
+
+function Editable({
+  value,
+  onCommit,
+  placeholder = "…",
+  className = "",
+  multiline = false,
+}: {
+  value: string;
+  onCommit: (v: string) => void;
+  placeholder?: string;
+  className?: string;
+  multiline?: boolean;
+}) {
+  const isEmpty = !value.trim();
+  return (
+    <span
+      contentEditable
+      suppressContentEditableWarning
+      onBlur={(e) => {
+        const text = (e.currentTarget as HTMLElement).innerText.replace(/\n$/, "");
+        if (text !== value) onCommit(text);
+      }}
+      onPaste={(e) => {
+        // Cegah formatting asing (bold/warna/font) ikut ter-paste — hanya teks polos
+        // yang boleh masuk, supaya isi variabel tidak pernah membawa gaya di luar template.
+        e.preventDefault();
+        const text = e.clipboardData.getData("text/plain");
+        document.execCommand("insertText", false, text);
+      }}
+      onKeyDown={(e) => {
+        // Blok shortcut format bawaan browser (Ctrl/Cmd+B/I/U) — isian naskah harus
+        // selalu mengikuti gaya template, tidak boleh ada bold/italic liar dari pengguna.
+        if ((e.ctrlKey || e.metaKey) && ["b", "i", "u"].includes(e.key.toLowerCase())) {
+          e.preventDefault();
+        }
+        if (!multiline && e.key === "Enter") {
+          e.preventDefault();
+          (e.currentTarget as HTMLElement).blur();
+        }
+      }}
+      data-placeholder={placeholder}
+      className={`editable-field outline-none rounded px-0.5 -mx-0.5 cursor-text transition-colors hover:bg-accent/10 focus:bg-accent/10 focus:ring-1 focus:ring-accent/40 ${
+        isEmpty ? "text-slate-300 italic" : ""
+      } ${className}`}
+      style={{
+        whiteSpace: multiline ? "pre-wrap" : "pre",
+        display: multiline ? "block" : "inline-block",
+        minWidth: "1ch",
+        minHeight: multiline ? "1.4em" : undefined,
+      }}
+    >
+      {value || placeholder}
+    </span>
+  );
+}
+
+/* ------------------------------------------------------------------ */
 /*  Main component                                                     */
 /* ------------------------------------------------------------------ */
 
@@ -713,10 +778,27 @@ async function handleDownloadDocx() {
             </p>
           </div>
 
-          {/* PREVIEW (live, mengikuti isian di sebelah kiri) */}
+          {/* EDITOR NASKAH (live, gaya "Text Editor" SRIKANDI — klik teks di bawah untuk mengedit langsung) */}
           <div className="flex flex-col items-center gap-4">
-            <div className="print-area w-full max-w-[820px] min-h-[1000px]">
-              <RealDocxPreview data={naskahData} />
+            <p className="no-print text-slate-400 text-xs flex items-center gap-1.5 self-start">
+              <span className="text-accent">✏️</span> Klik teks di bawah untuk mengedit langsung di naskah — form di kiri &amp; naskah di sini selalu tersinkron.
+            </p>
+            <div className="print-area w-full max-w-[820px] min-h-[1000px] bg-white text-[#1e293b] rounded-lg shadow-xl p-10">
+              <LetterPreview
+                naskahType={naskahType}
+                satker={satker}
+                suratDinas={suratDinas}
+                undangan={undangan}
+                memorandum={memorandum}
+                notaDinas={notaDinas}
+                suratPerintahTugas={suratPerintahTugas}
+                onSatkerChange={(p) => setSatker((s) => ({ ...s, ...p }))}
+                onSuratDinasChange={(p) => setSuratDinas((s) => ({ ...s, ...p }))}
+                onUndanganChange={(p) => setUndangan((s) => ({ ...s, ...p }))}
+                onMemorandumChange={(p) => setMemorandum((s) => ({ ...s, ...p }))}
+                onNotaDinasChange={(p) => setNotaDinas((s) => ({ ...s, ...p }))}
+                onSuratPerintahTugasChange={(p) => setSuratPerintahTugas((s) => ({ ...s, ...p }))}
+              />
             </div>
           </div>
         </main>
@@ -1358,6 +1440,12 @@ function LetterPreview({
   memorandum,
   notaDinas,
   suratPerintahTugas,
+  onSatkerChange,
+  onSuratDinasChange,
+  onUndanganChange,
+  onMemorandumChange,
+  onNotaDinasChange,
+  onSuratPerintahTugasChange,
 }: {
   naskahType: NaskahType;
   satker: SatkerInfo;
@@ -1366,6 +1454,12 @@ function LetterPreview({
   memorandum: MemorandumForm;
   notaDinas: NotaDinasForm;
   suratPerintahTugas: SuratPerintahTugasForm;
+  onSatkerChange: (patch: Partial<SatkerInfo>) => void;
+  onSuratDinasChange: (patch: Partial<SuratDinasForm>) => void;
+  onUndanganChange: (patch: Partial<UndanganForm>) => void;
+  onMemorandumChange: (patch: Partial<MemorandumForm>) => void;
+  onNotaDinasChange: (patch: Partial<NotaDinasForm>) => void;
+  onSuratPerintahTugasChange: (patch: Partial<SuratPerintahTugasForm>) => void;
 }) {
   const satkerLines = satker.nama.split("\n").filter(Boolean);
 
@@ -1377,10 +1471,20 @@ function LetterPreview({
         BPS
       </div>
       <div>
-        <p className="font-bold text-[15px] leading-tight whitespace-pre-line">{satker.nama}</p>
-        <p className="text-[11px] text-slate-600 mt-0.5">{satker.alamat}</p>
+        <p className="font-bold text-[15px] leading-tight whitespace-pre-line">
+          <Editable
+            value={satker.nama}
+            onCommit={(v) => onSatkerChange({ nama: v })}
+            multiline
+            placeholder="Nama Satuan Kerja"
+          />
+        </p>
+        <p className="text-[11px] text-slate-600 mt-0.5">
+          <Editable value={satker.alamat} onCommit={(v) => onSatkerChange({ alamat: v })} placeholder="Alamat" />
+        </p>
         <p className="text-[11px] text-slate-600">
-          Homepage: {satker.homepage} E-mail: {satker.email}
+          Homepage: <Editable value={satker.homepage} onCommit={(v) => onSatkerChange({ homepage: v })} placeholder="Homepage" />{" "}
+          E-mail: <Editable value={satker.email} onCommit={(v) => onSatkerChange({ email: v })} placeholder="E-mail" />
         </p>
       </div>
     </div>
@@ -1394,11 +1498,14 @@ function LetterPreview({
         <br />
         BPS
       </div>
-      {satkerLines.map((l, i) => (
-        <p key={i} className="font-bold italic text-[14px] leading-tight uppercase">
-          {l}
-        </p>
-      ))}
+      <p className="font-bold italic text-[14px] leading-tight uppercase">
+        <Editable
+          value={satker.nama}
+          onCommit={(v) => onSatkerChange({ nama: v })}
+          multiline
+          placeholder="Nama Satuan Kerja"
+        />
+      </p>
     </div>
   );
 
@@ -1406,50 +1513,50 @@ function LetterPreview({
   // rata tengah, tebal, tanpa cetak miring — sesuai template resmi.
   const KopMemoNota = (
     <div className="text-center border-b-2 border-[#1e293b] pb-3 mb-6">
-   {satkerLines.map((l, i) => (
-        <p key={i} className="font-bold text-[14px] leading-tight uppercase">
-          {l}
-        </p>
-      ))}
+      <p className="font-bold text-[14px] leading-tight uppercase">
+        <Editable
+          value={satker.nama}
+          onCommit={(v) => onSatkerChange({ nama: v })}
+          multiline
+          placeholder="Nama Satuan Kerja"
+        />
+      </p>
     </div>
   );
 
   if (naskahType === "surat_dinas") {
     const f = suratDinas;
+    const patch = (p: Partial<SuratDinasForm>) => onSuratDinasChange(p);
     return (
       <div className="text-[13px] leading-relaxed">
         {Kop}
         <div className="flex justify-between mb-6">
           <table className="text-[13px]">
             <tbody>
-              <tr><td className="pr-3 align-top">Nomor</td><td className="pr-2 align-top">:</td><td>{f.nomor || <Ph />}</td></tr>
-              <tr><td className="pr-3 align-top">Sifat</td><td className="pr-2 align-top">:</td><td>{f.sifat || <Ph />}</td></tr>
-              <tr><td className="pr-3 align-top">Lampiran</td><td className="pr-2 align-top">:</td><td>{f.lampiran || "-"}</td></tr>
-              <tr><td className="pr-3 align-top">Hal</td><td className="pr-2 align-top">:</td><td className="font-semibold">{f.hal || <Ph />}</td></tr>
+              <tr><td className="pr-3 align-top">Nomor</td><td className="pr-2 align-top">:</td><td><Editable value={f.nomor} onCommit={(v) => patch({ nomor: v })} /></td></tr>
+              <tr><td className="pr-3 align-top">Sifat</td><td className="pr-2 align-top">:</td><td><Editable value={f.sifat} onCommit={(v) => patch({ sifat: v })} /></td></tr>
+              <tr><td className="pr-3 align-top">Lampiran</td><td className="pr-2 align-top">:</td><td><Editable value={f.lampiran} onCommit={(v) => patch({ lampiran: v })} placeholder="-" /></td></tr>
+              <tr><td className="pr-3 align-top">Hal</td><td className="pr-2 align-top">:</td><td className="font-semibold"><Editable value={f.hal} onCommit={(v) => patch({ hal: v })} /></td></tr>
             </tbody>
           </table>
-          <p className="whitespace-nowrap">{f.tempatTanggal || <Ph text="Tempat, Tanggal" />}</p>
+          <p className="whitespace-nowrap"><Editable value={f.tempatTanggal} onCommit={(v) => patch({ tempatTanggal: v })} placeholder="Tempat, Tanggal" /></p>
         </div>
 
         <p className="mb-1">Yth.</p>
         <div className="mb-1 pl-0">
-          {linesOrDash(f.yth).length ? linesOrDash(f.yth).map((l, i) => <p key={i}>{l}</p>) : <Ph />}
+          <Editable value={f.yth} onCommit={(v) => patch({ yth: v })} multiline />
         </div>
         <p>di –</p>
         <p className="mb-4">Tempat</p>
 
-        <p className="mb-3 text-justify">{f.alineaPembuka || <Ph />}</p>
-        <p className="mb-3 text-justify whitespace-pre-line">{f.alineaIsi || <Ph />}</p>
-        <p className="mb-8 text-justify">{f.alineaPenutup || <Ph />}</p>
+        <p className="mb-3 text-justify"><Editable value={f.alineaPembuka} onCommit={(v) => patch({ alineaPembuka: v })} multiline /></p>
+        <p className="mb-3 text-justify"><Editable value={f.alineaIsi} onCommit={(v) => patch({ alineaIsi: v })} multiline /></p>
+        <p className="mb-8 text-justify"><Editable value={f.alineaPenutup} onCommit={(v) => patch({ alineaPenutup: v })} multiline /></p>
 
         <div className="ml-auto w-[280px] text-center">
-          {jabatanLines(f.jabatanPengirim).length ? (
-            jabatanLines(f.jabatanPengirim).map((l, i) => <p key={i}>{l}</p>)
-          ) : (
-            <Ph />
-          )}
+          <Editable value={f.jabatanPengirim} onCommit={(v) => patch({ jabatanPengirim: v })} multiline />
           <div className="h-16" />
-          <p className="font-semibold">{f.namaPengirim || <Ph />}</p>
+          <p className="font-semibold"><Editable value={f.namaPengirim} onCommit={(v) => patch({ namaPengirim: v })} /></p>
         </div>
 
         {linesOrDash(f.tembusan).length > 0 && (
@@ -1487,49 +1594,46 @@ function LetterPreview({
 
   if (naskahType === "undangan") {
     const f = undangan;
+    const patch = (p: Partial<UndanganForm>) => onUndanganChange(p);
     return (
       <div className="text-[13px] leading-relaxed">
         {Kop}
         <div className="flex justify-between mb-6">
           <table className="text-[13px]">
             <tbody>
-              <tr><td className="pr-3 align-top">Nomor</td><td className="pr-2 align-top">:</td><td>{f.nomor || <Ph />}</td></tr>
-              <tr><td className="pr-3 align-top">Sifat</td><td className="pr-2 align-top">:</td><td>{f.sifat || <Ph />}</td></tr>
-              <tr><td className="pr-3 align-top">Lampiran</td><td className="pr-2 align-top">:</td><td>{f.lampiran || "-"}</td></tr>
-              <tr><td className="pr-3 align-top">Hal</td><td className="pr-2 align-top">:</td><td className="font-semibold">{f.hal || <Ph />}</td></tr>
+              <tr><td className="pr-3 align-top">Nomor</td><td className="pr-2 align-top">:</td><td><Editable value={f.nomor} onCommit={(v) => patch({ nomor: v })} /></td></tr>
+              <tr><td className="pr-3 align-top">Sifat</td><td className="pr-2 align-top">:</td><td><Editable value={f.sifat} onCommit={(v) => patch({ sifat: v })} /></td></tr>
+              <tr><td className="pr-3 align-top">Lampiran</td><td className="pr-2 align-top">:</td><td><Editable value={f.lampiran} onCommit={(v) => patch({ lampiran: v })} placeholder="-" /></td></tr>
+              <tr><td className="pr-3 align-top">Hal</td><td className="pr-2 align-top">:</td><td className="font-semibold"><Editable value={f.hal} onCommit={(v) => patch({ hal: v })} /></td></tr>
             </tbody>
           </table>
-          <p className="whitespace-nowrap">{f.tempatTanggal || <Ph text="Tempat, Tanggal" />}</p>
+          <p className="whitespace-nowrap"><Editable value={f.tempatTanggal} onCommit={(v) => patch({ tempatTanggal: v })} placeholder="Tempat, Tanggal" /></p>
         </div>
 
         <p className="mb-1">Yth.</p>
         <div className="mb-1">
-          {linesOrDash(f.yth).length ? linesOrDash(f.yth).map((l, i) => <p key={i}>{l}</p>) : <Ph />}
+          <Editable value={f.yth} onCommit={(v) => patch({ yth: v })} multiline />
         </div>
         <p>di –</p>
         <p className="mb-4">Tempat</p>
 
-        <p className="mb-3 text-justify">{f.alineaPembuka || <Ph />}</p>
+        <p className="mb-3 text-justify"><Editable value={f.alineaPembuka} onCommit={(v) => patch({ alineaPembuka: v })} multiline /></p>
 
         <table className="text-[13px] mb-3">
           <tbody>
-            <tr><td className="pr-3 align-top">pada hari/tanggal</td><td className="pr-2 align-top">:</td><td>{f.hariTanggal || <Ph />}</td></tr>
-            <tr><td className="pr-3 align-top">waktu</td><td className="pr-2 align-top">:</td><td>pukul {f.waktu || <Ph />}</td></tr>
-            <tr><td className="pr-3 align-top">tempat</td><td className="pr-2 align-top">:</td><td>{f.tempatAcara || <Ph />}</td></tr>
-            <tr><td className="pr-3 align-top">acara</td><td className="pr-2 align-top">:</td><td>{f.acara || <Ph />}</td></tr>
+            <tr><td className="pr-3 align-top">pada hari/tanggal</td><td className="pr-2 align-top">:</td><td><Editable value={f.hariTanggal} onCommit={(v) => patch({ hariTanggal: v })} /></td></tr>
+            <tr><td className="pr-3 align-top">waktu</td><td className="pr-2 align-top">:</td><td>pukul <Editable value={f.waktu} onCommit={(v) => patch({ waktu: v })} /></td></tr>
+            <tr><td className="pr-3 align-top">tempat</td><td className="pr-2 align-top">:</td><td><Editable value={f.tempatAcara} onCommit={(v) => patch({ tempatAcara: v })} /></td></tr>
+            <tr><td className="pr-3 align-top">acara</td><td className="pr-2 align-top">:</td><td><Editable value={f.acara} onCommit={(v) => patch({ acara: v })} /></td></tr>
           </tbody>
         </table>
 
-        <p className="mb-8 text-justify">{f.alineaPenutup || <Ph />}</p>
+        <p className="mb-8 text-justify"><Editable value={f.alineaPenutup} onCommit={(v) => patch({ alineaPenutup: v })} multiline /></p>
 
         <div className="ml-auto w-[280px] text-center">
-          {jabatanLines(f.jabatanPengirim).length ? (
-            jabatanLines(f.jabatanPengirim).map((l, i) => <p key={i}>{l}</p>)
-          ) : (
-            <Ph />
-          )}
+          <Editable value={f.jabatanPengirim} onCommit={(v) => patch({ jabatanPengirim: v })} multiline />
           <div className="h-16" />
-          <p className="font-semibold">{f.namaPengirim || <Ph />}</p>
+          <p className="font-semibold"><Editable value={f.namaPengirim} onCommit={(v) => patch({ namaPengirim: v })} /></p>
         </div>
 
         {linesOrDash(f.tembusan).length > 0 && (
@@ -1558,34 +1662,31 @@ function LetterPreview({
 
   if (naskahType === "memorandum") {
     const f = memorandum;
+    const patch = (p: Partial<MemorandumForm>) => onMemorandumChange(p);
     return (
       <div className="text-[13px] leading-relaxed">
         {KopMemoNota}
         <div className="text-center mb-6">
           <p className="font-bold tracking-wide">MEMORANDUM</p>
-          <p>NOMOR {f.nomor || <Ph />}</p>
+          <p>NOMOR <Editable value={f.nomor} onCommit={(v) => patch({ nomor: v })} /></p>
         </div>
 
         <table className="text-[13px] mb-4">
           <tbody>
-            <tr><td className="pr-3 align-top">Yth.</td><td className="pr-2 align-top">:</td><td>{f.yth || <Ph />}</td></tr>
-            <tr><td className="pr-3 align-top">Hal</td><td className="pr-2 align-top">:</td><td className="font-semibold">{f.hal || <Ph />}</td></tr>
+            <tr><td className="pr-3 align-top">Yth.</td><td className="pr-2 align-top">:</td><td><Editable value={f.yth} onCommit={(v) => patch({ yth: v })} /></td></tr>
+            <tr><td className="pr-3 align-top">Hal</td><td className="pr-2 align-top">:</td><td className="font-semibold"><Editable value={f.hal} onCommit={(v) => patch({ hal: v })} /></td></tr>
           </tbody>
         </table>
 
         <div className="mb-8">
-          <BodyText text={f.isi} />
+          <Editable value={f.isi} onCommit={(v) => patch({ isi: v })} multiline className="text-justify" />
         </div>
 
         <div className="ml-auto w-[280px] text-right">
-          <p>{f.tempatTanggal || <Ph text="Tempat, Tanggal" />}</p>
-          {jabatanLines(f.jabatanPengirim).length ? (
-            jabatanLines(f.jabatanPengirim).map((l, i) => <p key={i}>{l}</p>)
-          ) : (
-            <Ph />
-          )}
+          <p><Editable value={f.tempatTanggal} onCommit={(v) => patch({ tempatTanggal: v })} placeholder="Tempat, Tanggal" /></p>
+          <Editable value={f.jabatanPengirim} onCommit={(v) => patch({ jabatanPengirim: v })} multiline />
           <div className="h-16" />
-          <p className="font-semibold">{f.namaPengirim || <Ph />}</p>
+          <p className="font-semibold"><Editable value={f.namaPengirim} onCommit={(v) => patch({ namaPengirim: v })} /></p>
         </div>
 
         {linesOrDash(f.tembusan).length > 0 && (
@@ -1602,30 +1703,31 @@ function LetterPreview({
 
   if (naskahType === "nota_dinas") {
     const f = notaDinas;
+    const patch = (p: Partial<NotaDinasForm>) => onNotaDinasChange(p);
     return (
       <div className="text-[13px] leading-relaxed">
         {KopMemoNota}
         <div className="text-center mb-6">
           <p className="font-bold tracking-wide">NOTA DINAS</p>
-          <p>NOMOR {f.nomor || <Ph />}</p>
+          <p>NOMOR <Editable value={f.nomor} onCommit={(v) => patch({ nomor: v })} /></p>
         </div>
 
         <table className="text-[13px] mb-4">
           <tbody>
-            <tr><td className="pr-3 align-top">Yth.</td><td className="pr-2 align-top">:</td><td>{f.yth || <Ph />}</td></tr>
-            <tr><td className="pr-3 align-top">Dari</td><td className="pr-2 align-top">:</td><td>{f.dari || <Ph />}</td></tr>
-            <tr><td className="pr-3 align-top">Hal</td><td className="pr-2 align-top">:</td><td className="font-semibold">{f.hal || <Ph />}</td></tr>
-            <tr><td className="pr-3 align-top">Tanggal</td><td className="pr-2 align-top">:</td><td>{f.tanggal || <Ph />}</td></tr>
+            <tr><td className="pr-3 align-top">Yth.</td><td className="pr-2 align-top">:</td><td><Editable value={f.yth} onCommit={(v) => patch({ yth: v })} /></td></tr>
+            <tr><td className="pr-3 align-top">Dari</td><td className="pr-2 align-top">:</td><td><Editable value={f.dari} onCommit={(v) => patch({ dari: v })} /></td></tr>
+            <tr><td className="pr-3 align-top">Hal</td><td className="pr-2 align-top">:</td><td className="font-semibold"><Editable value={f.hal} onCommit={(v) => patch({ hal: v })} /></td></tr>
+            <tr><td className="pr-3 align-top">Tanggal</td><td className="pr-2 align-top">:</td><td><Editable value={f.tanggal} onCommit={(v) => patch({ tanggal: v })} /></td></tr>
           </tbody>
         </table>
 
         <div className="mb-8">
-          <BodyText text={f.isi} />
+          <Editable value={f.isi} onCommit={(v) => patch({ isi: v })} multiline className="text-justify" />
         </div>
 
         <div className="ml-auto w-[280px] text-center">
           <div className="h-16" />
-          <p className="font-semibold">{f.namaPengirim || <Ph />}</p>
+          <p className="font-semibold"><Editable value={f.namaPengirim} onCommit={(v) => patch({ namaPengirim: v })} /></p>
         </div>
 
         {linesOrDash(f.tembusan).length > 0 && (
@@ -1642,6 +1744,7 @@ function LetterPreview({
 
   // surat_perintah_tugas
   const f = suratPerintahTugas;
+  const patch = (p: Partial<SuratPerintahTugasForm>) => onSuratPerintahTugasChange(p);
   const menimbangLines = linesOrDash(f.menimbang);
   const mengingatLines = linesOrDash(f.mengingat);
   const kepadaLines = linesOrDash(f.kepada);
@@ -1652,11 +1755,11 @@ function LetterPreview({
    {KopSingkat}
       <div className="text-center mb-6">
         <p className="font-bold tracking-wide">SURAT PERINTAH/SURAT TUGAS</p>
-        <p>NOMOR {f.nomor || <Ph />}</p>
+        <p>NOMOR <Editable value={f.nomor} onCommit={(v) => patch({ nomor: v })} /></p>
       </div>
 
       <p className="mb-4 text-[13px]">
-        <span className="font-semibold">Dasar</span> : {f.dasarSurat || <Ph />}
+        <span className="font-semibold">Dasar</span> : <Editable value={f.dasarSurat} onCommit={(v) => patch({ dasarSurat: v })} multiline />
       </p>
 
       <table className="text-[13px] mb-4 w-full" style={{ borderCollapse: "collapse" }}>
@@ -1762,14 +1865,10 @@ function LetterPreview({
       </table>
 
       <div className="ml-auto w-[280px] text-center">
-        <p>{f.tempatTanggal || <Ph text="Tempat, Tanggal" />}</p>
-        {jabatanLines(f.jabatanPengirim).length ? (
-          jabatanLines(f.jabatanPengirim).map((l, i) => <p key={i}>{l}</p>)
-        ) : (
-          <Ph />
-        )}
+        <p><Editable value={f.tempatTanggal} onCommit={(v) => patch({ tempatTanggal: v })} placeholder="Tempat, Tanggal" /></p>
+        <Editable value={f.jabatanPengirim} onCommit={(v) => patch({ jabatanPengirim: v })} multiline />
         <div className="h-16" />
-        <p className="font-semibold">{f.namaPengirim || <Ph />}</p>
+        <p className="font-semibold"><Editable value={f.namaPengirim} onCommit={(v) => patch({ namaPengirim: v })} /></p>
       </div>
 
       {f.modeSurat === "dengan_lampiran" && (
